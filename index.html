@@ -21,6 +21,21 @@
       display: block;
       background: #000;
     }
+
+    /* optional: make UI a bit nicer */
+    #ui label {
+      display: inline-block;
+      min-width: 120px;
+    }
+    #ui input[type="range"] {
+      width: 160px;
+      vertical-align: middle;
+    }
+    #ui span {
+      display: inline-block;
+      min-width: 48px;
+      text-align: right;
+    }
   </style>
 
   <script src="./Utils/trackball-rotator.js"></script>
@@ -32,6 +47,7 @@
   <script type="module" src="./main.js"></script>
 </head>
 
+<!-- якщо у твоєму main.js є window.addEventListener('load', init); то onload НЕ потрібен -->
 <body>
   <h2>Surface (PA#3): Texture + MIP Mapping</h2>
 
@@ -44,25 +60,54 @@
        style="position:fixed; top:10px; right:10px; background:#111a; padding:10px; color:#fff;
               font:12px sans-serif; border-radius:8px; z-index:10;">
 
-    <div><label>a <input id="a" type="range" min="0" max="10" step="0.1" value="4"></label> <span id="aVal"></span></div>
-    <div><label>n <input id="n" type="range" min="0" max="2" step="0.01" value="0.5"></label> <span id="nVal"></span></div>
-    <div><label>m <input id="m" type="range" min="1" max="20" step="1" value="6"></label> <span id="mVal"></span></div>
-    <div><label>b <input id="b" type="range" min="1" max="10" step="0.1" value="6"></label> <span id="bVal"></span></div>
-    <div><label>phi <input id="phi" type="range" min="-3.14" max="3.14" step="0.01" value="0"></label> <span id="phiVal"></span></div>
+    <div><label>a</label>
+      <input id="a" type="range" min="0" max="10" step="0.1" value="4">
+      <span id="aVal"></span>
+    </div>
+
+    <div><label>n</label>
+      <input id="n" type="range" min="0" max="2" step="0.01" value="0.5">
+      <span id="nVal"></span>
+    </div>
+
+    <div><label>m</label>
+      <input id="m" type="range" min="1" max="20" step="1" value="6">
+      <span id="mVal"></span>
+    </div>
+
+    <div><label>b</label>
+      <input id="b" type="range" min="1" max="10" step="0.1" value="6">
+      <span id="bVal"></span>
+    </div>
+
+    <div><label>phi</label>
+      <input id="phi" type="range" min="-3.14" max="3.14" step="0.01" value="0">
+      <span id="phiVal"></span>
+    </div>
 
     <hr style="opacity:.2" />
 
-    <div><label>Nu (U samples) <input id="Nu" type="range" min="16" max="256" step="1" value="120"></label> <span id="NuVal"></span></div>
-    <div><label>Nr (V samples) <input id="Nr" type="range" min="16" max="256" step="1" value="120"></label> <span id="NrVal"></span></div>
+    <div><label>Nu (U)</label>
+      <input id="Nu" type="range" min="16" max="256" step="1" value="120">
+      <span id="NuVal"></span>
+    </div>
+
+    <div><label>Nr (V)</label>
+      <input id="Nr" type="range" min="16" max="256" step="1" value="120">
+      <span id="NrVal"></span>
+    </div>
 
     <hr style="opacity:.2" />
 
-    <!-- ✅ NEW: scale slider -->
-    <div>
-      <label>Scale
-        <input id="scale" type="range" min="0.05" max="2.0" step="0.01" value="0.35">
-      </label>
+    <div><label>Scale</label>
+      <input id="scale" type="range" min="0.05" max="2.0" step="0.01" value="0.35">
       <span id="scaleVal"></span>
+    </div>
+
+    <!-- ✅ NEW: UV tiling slider (щоб реально було видно MIP-рівні) -->
+    <div><label>UV tiles</label>
+      <input id="uvScale" type="range" min="1" max="64" step="1" value="16">
+      <span id="uvScaleVal"></span>
     </div>
 
     <hr style="opacity:.2" />

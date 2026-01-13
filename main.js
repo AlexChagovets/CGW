@@ -1,4 +1,4 @@
-// main.js (PA#3) - Triangles + Gouraud + MIP-mapped texture + SCALE (demo MIP levels)
+// main.js (PA#3) - Triangles + Gouraud + MIP-mapped texture + SCALE + UV TILING (MIP demo)
 import { Model } from './model.js';
 'use strict';
 
@@ -13,7 +13,8 @@ let params = {
   a: 4, n: 0.5, m: 6, b: 6, phi: 0,
   Nu: 120,
   Nr: 120,
-  scale: 0.35
+  scale: 0.35,
+  uvScale: 16.0        // ✅ NEW: repeats texture many times -> MIP is obvious
 };
 
 // shader locations
@@ -27,7 +28,7 @@ let startTime = 0;
 
 // ---------- helpers ----------
 function mat3FromMat4(m) {
-  // OK only if NO non-uniform scaling. We enforce uniform scale, so OK.
+  // OK only if NO non-uniform scaling. We use uniform scale, so OK.
   return new Float32Array([
     m[0], m[1], m[2],
     m[4], m[5], m[6],
@@ -57,7 +58,6 @@ function makeMipCanvas(size, level) {
   c.height = size;
   const ctx = c.getContext('2d');
 
-  // strong different color per mip level
   ctx.fillStyle = `hsl(${(level * 60) % 360}, 85%, 55%)`;
   ctx.fillRect(0, 0, size, size);
 
@@ -86,24 +86,21 @@ function createMipTexture(gl) {
 
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
-  const baseSize = 256;              // power of 2
+  const baseSize = 256; // power of 2
   const maxLevel = Math.floor(Math.log2(baseSize));
 
-  // upload levels manually
   for (let level = 0; level <= maxLevel; level++) {
     const size = baseSize >> level;
     const img = makeMipCanvas(size, level);
     gl.texImage2D(gl.TEXTURE_2D, level, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
   }
 
-  // wrap
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 
-  // ✅ 3-й варіант: різкі стрибки між MIP-рівнями (видно в відео)
+  // ✅ sharp jumps between MIP levels (best for demo)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
 
-  // magnification (no mip)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   gl.bindTexture(gl.TEXTURE_2D, null);
@@ -123,21 +120,17 @@ function drawFrame(timeMs) {
 
   const aspect = gl.canvas.width / gl.canvas.height;
 
-  // make MIP easier to see: narrower FOV helps (more minification when scaled down)
+  // narrower FOV helps make minification more visible
   const projection = m4.perspective(Math.PI / 10, aspect, 0.1, 200);
 
   const view = spaceball.getViewMatrix();
 
   const rotateToPointZero = m4.axisRotation([0.707, 0.707, 0], 0.7);
-
-  // ✅ make object go “farther” a bit so you can reach higher mips
   const translateToPointZero = m4.translation(0, 0, -18);
 
-  // ✅ uniform scale (safe for normal matrix extraction)
   const s = Math.max(0.01, params.scale);
   const scaleM = m4.scaling(s, s, s);
 
-  // ModelView = T * S * R * View
   const modelView = m4.multiply(
     translateToPointZero,
     m4.multiply(scaleM, m4.multiply(rotateToPointZero, view))
@@ -145,7 +138,7 @@ function drawFrame(timeMs) {
 
   const mvp = m4.multiply(projection, modelView);
 
-  // rotating point light (world), then to view
+  // rotating point light
   const lightR = 12.0;
   const lightH = 6.0;
   const lightWorld = [lightR * Math.cos(t), lightH, lightR * Math.sin(t), 1.0];
@@ -158,7 +151,9 @@ function drawFrame(timeMs) {
   gl.uniformMatrix3fv(loc.uN, false, mat3FromMat4(modelView));
   gl.uniform3f(loc.uLight, lightView4[0], lightView4[1], lightView4[2]);
 
-  // bind texture
+  // ✅ NEW: pass uv tiling
+  gl.uniform1f(loc.uUVScale, params.uvScale);
+
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, mipTex);
   gl.uniform1i(loc.uTex, 0);
@@ -170,7 +165,6 @@ function drawFrame(timeMs) {
 
 // ---------- GL init ----------
 function initGL() {
-  // expects vertexShaderSource + fragmentShaderSource from shader.gpu
   if (typeof vertexShaderSource === 'undefined' || typeof fragmentShaderSource === 'undefined') {
     throw new Error('shader.gpu did not define vertexShaderSource/fragmentShaderSource');
   }
@@ -187,6 +181,8 @@ function initGL() {
     uN: gl.getUniformLocation(program, 'NormalMatrix'),
     uLight: gl.getUniformLocation(program, 'LightPosView'),
     uTex: gl.getUniformLocation(program, 'uTex'),
+
+    uUVScale: gl.getUniformLocation(program, 'uUVScale'), // ✅ NEW
   };
 
   surface = new Model();
@@ -235,8 +231,8 @@ function setupUI() {
       params[key] = isFloat ? parseFloat(el.value) : Number(el.value);
       out.textContent = format(params[key]);
 
-      // geometry depends on these params
-      if (key !== 'scale') rebuildSurface();
+      // rebuild only if geometry depends on it
+      if (key !== 'scale' && key !== 'uvScale') rebuildSurface();
     };
 
     el.addEventListener('input', update);
@@ -250,7 +246,9 @@ function setupUI() {
   bindSlider('phi', 'phi', v => v.toFixed(2));
   bindSlider('Nu', 'Nu');
   bindSlider('Nr', 'Nr');
+
   bindSlider('scale', 'scale', v => v.toFixed(2));
+  bindSlider('uvScale', 'uvScale', v => v.toFixed(1)); // ✅ NEW
 
   const shotBtn = document.getElementById('shot');
   if (shotBtn) {
@@ -283,16 +281,11 @@ function init() {
     return;
   }
 
-  // TrackballRotator is used only to get view matrix
   spaceball = new TrackballRotator(canvas, () => {}, 0);
 
   setupUI();
   requestAnimationFrame(drawFrame);
 }
 
-// ✅ IMPORTANT: choose ONLY ONE init method
-// If you have <body onload="init()"> keep this line:
 window.init = init;
-
-// If you DO NOT have onload in HTML, then use this:
 window.addEventListener('load', init);
