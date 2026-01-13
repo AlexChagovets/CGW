@@ -1,0 +1,69 @@
+// shader.gpu
+
+const vertexShaderSource = `
+precision mediump float;
+
+attribute vec3 vertex;
+attribute vec3 normal;
+attribute vec2 texcoord;
+
+uniform mat4 ModelViewProjectionMatrix;
+uniform mat4 ModelViewMatrix;
+uniform mat3 NormalMatrix;
+uniform vec3 LightPosView;   // світло у view координатах
+
+varying vec3 vLight;   // інтенсивність освітлення
+varying vec2 vTex;     // UV
+
+void main() {
+  // позиція вершини у view
+  vec3 P = (ModelViewMatrix * vec4(vertex, 1.0)).xyz;
+
+  // нормаль у view
+  vec3 N = normalize(NormalMatrix * normal);
+
+  // напрям до світла
+  vec3 L = normalize(LightPosView - P);
+
+  // глобальний вектор до глядача (підказка)
+  vec3 V = vec3(0.0, 0.0, 1.0);
+
+  // коефіцієнти
+  float ka = 0.20;
+  float kd = 0.70;
+  float ks = 0.60;
+  float shin = 32.0;
+
+  // diffuse
+  float diff = max(dot(N, L), 0.0);
+
+  // specular
+  vec3 R = reflect(-L, N);
+  float spec = 0.0;
+  if (diff > 0.0) {
+    spec = pow(max(dot(R, V), 0.0), shin);
+  }
+
+  float I = ka + kd * diff + ks * spec;
+  I = clamp(I, 0.0, 1.0);
+
+  vLight = vec3(I);
+  vTex = texcoord;
+
+  gl_Position = ModelViewProjectionMatrix * vec4(vertex, 1.0);
+}
+`;
+
+const fragmentShaderSource = `
+precision mediump float;
+
+varying vec3 vLight;
+varying vec2 vTex;
+
+uniform sampler2D uTex;
+
+void main() {
+  vec4 texColor = texture2D(uTex, vTex);
+  gl_FragColor = vec4(texColor.rgb * vLight, texColor.a);
+}
+`;

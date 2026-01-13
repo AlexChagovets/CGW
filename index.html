@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PA#3 - MIP Mapping</title>
+
+  <style>
+    body {
+      margin: 0;
+      padding: 12px;
+      background: #EEEEEE;
+      font-family: Arial, sans-serif;
+    }
+
+    #canvas-holder {
+      margin-top: 8px;
+    }
+
+    canvas {
+      display: block;
+      background: #000;
+    }
+  </style>
+
+  <script src="./Utils/trackball-rotator.js"></script>
+  <script src="./Utils/m4.js"></script>
+
+  <!-- має оголошувати vertexShaderSource та fragmentShaderSource -->
+  <script src="./shader.gpu"></script>
+
+  <script type="module" src="./main.js"></script>
+</head>
+
+<body>
+  <h2>Surface (PA#3): Texture + MIP Mapping</h2>
+
+  <p id="message">
+    Drag your mouse on the surface to rotate it.<br />
+    (On a touch screen, you can use your finger.)
+  </p>
+
+  <div id="ui"
+       style="position:fixed; top:10px; right:10px; background:#111a; padding:10px; color:#fff;
+              font:12px sans-serif; border-radius:8px; z-index:10;">
+
+    <div><label>a <input id="a" type="range" min="0" max="10" step="0.1" value="4"></label> <span id="aVal"></span></div>
+    <div><label>n <input id="n" type="range" min="0" max="2" step="0.01" value="0.5"></label> <span id="nVal"></span></div>
+    <div><label>m <input id="m" type="range" min="1" max="20" step="1" value="6"></label> <span id="mVal"></span></div>
+    <div><label>b <input id="b" type="range" min="1" max="10" step="0.1" value="6"></label> <span id="bVal"></span></div>
+    <div><label>phi <input id="phi" type="range" min="-3.14" max="3.14" step="0.01" value="0"></label> <span id="phiVal"></span></div>
+
+    <hr style="opacity:.2" />
+
+    <div><label>Nu (U samples) <input id="Nu" type="range" min="16" max="256" step="1" value="120"></label> <span id="NuVal"></span></div>
+    <div><label>Nr (V samples) <input id="Nr" type="range" min="16" max="256" step="1" value="120"></label> <span id="NrVal"></span></div>
+
+    <hr style="opacity:.2" />
+
+    <!-- ✅ NEW: scale slider -->
+    <div>
+      <label>Scale
+        <input id="scale" type="range" min="0.05" max="2.0" step="0.01" value="0.35">
+      </label>
+      <span id="scaleVal"></span>
+    </div>
+
+    <hr style="opacity:.2" />
+
+    <button id="shot">Screenshot</button>
+  </div>
+
+  <div id="canvas-holder">
+    <canvas width="900" height="900" id="webglcanvas"></canvas>
+  </div>
+</body>
+</html>

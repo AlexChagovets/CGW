@@ -1,0 +1,253 @@
+// main.js (PA#3) - Triangles + Gouraud + MIP-mapped texture + SCALE
+import { Model } from './model.js';
+'use strict';
+
+let gl;
+let canvas;
+let surface;
+let program;
+let spaceball;
+
+// params
+let params = {
+  a: 4, n: 0.5, m: 6, b: 6, phi: 0,
+  Nu: 120,
+  Nr: 120,
+  scale: 0.35   // ✅ SCALE
+};
+
+// shader locations
+let loc = null;
+
+// texture
+let mipTex = null;
+
+// ---------- helpers ----------
+function mat3FromMat4(m) {
+  return new Float32Array([
+    m[0], m[1], m[2],
+    m[4], m[5], m[6],
+    m[8], m[9], m[10],
+  ]);
+}
+
+function mulMat4Vec4(m, v) {
+  const x = m[0] * v[0] + m[4] * v[1] + m[8]  * v[2] + m[12] * v[3];
+  const y = m[1] * v[0] + m[5] * v[1] + m[9]  * v[2] + m[13] * v[3];
+  const z = m[2] * v[0] + m[6] * v[1] + m[10] * v[2] + m[14] * v[3];
+  const w = m[3] * v[0] + m[7] * v[1] + m[11] * v[2] + m[15] * v[3];
+  return [x, y, z, w];
+}
+
+function rebuildSurface() {
+  if (!surface || !gl) return;
+  surface.build(params);
+  surface.upload(gl);
+}
+
+// ---------- MIP texture generation ----------
+function makeMipCanvas(size, level) {
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d');
+
+  ctx.fillStyle = `hsl(${(level * 60) % 360}, 80%, 55%)`;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  const step = Math.max(4, Math.floor(size / 8));
+  for (let i = 0; i <= size; i += step) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, size); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(size, i); ctx.stroke();
+  }
+
+  ctx.fillStyle = '#fff';
+  ctx.font = `bold ${Math.max(10, size / 3)}px Arial`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(`MIP ${level}`, size / 2, size / 2);
+
+  return c;
+}
+
+function createMipTexture(gl) {
+  const tex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+
+  const baseSize = 256;
+  const maxLevel = Math.floor(Math.log2(baseSize));
+
+  for (let level = 0; level <= maxLevel; level++) {
+    const size = baseSize >> level;
+    const img = makeMipCanvas(size, level);
+    gl.texImage2D(gl.TEXTURE_2D, level, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  }
+
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+  gl.bindTexture(gl.TEXTURE_2D, null);
+  return tex;
+}
+
+// ---------- render ----------
+let startTime = 0;
+
+function drawFrame(timeMs) {
+  if (!gl || !program || !surface || !spaceball || !loc) return;
+
+  if (!startTime) startTime = timeMs;
+  const t = (timeMs - startTime) * 0.001;
+
+  gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+  gl.clearColor(0, 0, 0, 1);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+  const aspect = gl.canvas.width / gl.canvas.height;
+  const projection = m4.perspective(Math.PI / 8, aspect, 0.1, 100);
+
+  const view = spaceball.getViewMatrix();
+
+  const rotateToPointZero = m4.axisRotation([0.707, 0.707, 0], 0.7);
+  const translateToPointZero = m4.translation(0, 0, -10);
+  const scaleM = m4.scaling(params.scale, params.scale, params.scale); // ✅ SCALE
+
+  const modelView = m4.multiply(
+    translateToPointZero,
+    m4.multiply(scaleM, m4.multiply(rotateToPointZero, view))
+  );
+
+  const mvp = m4.multiply(projection, modelView);
+
+  const lightR = 12.0;
+  const lightH = 6.0;
+  const lightWorld = [lightR * Math.cos(t), lightH, lightR * Math.sin(t), 1.0];
+  const lightView4 = mulMat4Vec4(modelView, lightWorld);
+
+  gl.useProgram(program);
+
+  gl.uniformMatrix4fv(loc.uMVP, false, mvp);
+  gl.uniformMatrix4fv(loc.uMV, false, modelView);
+  gl.uniformMatrix3fv(loc.uN, false, mat3FromMat4(modelView));
+  gl.uniform3f(loc.uLight, lightView4[0], lightView4[1], lightView4[2]);
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, mipTex);
+  gl.uniform1i(loc.uTex, 0);
+
+  surface.draw(gl, program, loc);
+
+  requestAnimationFrame(drawFrame);
+}
+
+// ---------- GL init ----------
+function initGL() {
+  program = createProgram(gl, vertexShaderSource, fragmentShaderSource);
+
+  loc = {
+    aVertex: gl.getAttribLocation(program, 'vertex'),
+    aNormal: gl.getAttribLocation(program, 'normal'),
+    aTexcoord: gl.getAttribLocation(program, 'texcoord'),
+
+    uMVP: gl.getUniformLocation(program, 'ModelViewProjectionMatrix'),
+    uMV: gl.getUniformLocation(program, 'ModelViewMatrix'),
+    uN: gl.getUniformLocation(program, 'NormalMatrix'),
+    uLight: gl.getUniformLocation(program, 'LightPosView'),
+    uTex: gl.getUniformLocation(program, 'uTex'),
+  };
+
+  surface = new Model();
+  rebuildSurface();
+
+  mipTex = createMipTexture(gl);
+
+  gl.enable(gl.DEPTH_TEST);
+}
+
+// ---------- shader compilation ----------
+function createProgram(gl, vShader, fShader) {
+  const vsh = gl.createShader(gl.VERTEX_SHADER);
+  gl.shaderSource(vsh, vShader);
+  gl.compileShader(vsh);
+  if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
+    throw new Error('Vertex shader error: ' + gl.getShaderInfoLog(vsh));
+  }
+
+  const fsh = gl.createShader(gl.FRAGMENT_SHADER);
+  gl.shaderSource(fsh, fShader);
+  gl.compileShader(fsh);
+  if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) {
+    throw new Error('Fragment shader error: ' + gl.getShaderInfoLog(fsh));
+  }
+
+  const prog = gl.createProgram();
+  gl.attachShader(prog, vsh);
+  gl.attachShader(prog, fsh);
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+    throw new Error('Program link error: ' + gl.getProgramInfoLog(prog));
+  }
+  return prog;
+}
+
+// ---------- UI ----------
+function setupUI() {
+  function bindSlider(id, key, format = (v) => v) {
+    const el = document.getElementById(id);
+    const out = document.getElementById(id + 'Val');
+    if (!el || !out) return;
+
+    const update = () => {
+      const isFloat = String(el.step).includes('.');
+      params[key] = isFloat ? parseFloat(el.value) : Number(el.value);
+      out.textContent = format(params[key]);
+      rebuildSurface();
+    };
+
+    el.addEventListener('input', update);
+    update();
+  }
+
+  bindSlider('a', 'a');
+  bindSlider('n', 'n', v => v.toFixed(2));
+  bindSlider('m', 'm');
+  bindSlider('b', 'b', v => v.toFixed(2));
+  bindSlider('phi', 'phi', v => v.toFixed(2));
+  bindSlider('Nu', 'Nu');
+  bindSlider('Nr', 'Nr');
+  bindSlider('scale', 'scale', v => v.toFixed(2)); // ✅ SCALE
+
+  const shotBtn = document.getElementById('shot');
+  if (shotBtn) {
+    shotBtn.addEventListener('click', () => {
+      const url = canvas.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'surface_pa3_mip.png';
+      a.click();
+    });
+  }
+}
+
+// ---------- entry ----------
+function init() {
+  canvas = document.getElementById('webglcanvas');
+  gl = canvas.getContext('webgl');
+  if (!gl) {
+    document.getElementById('canvas-holder').innerHTML =
+      '<p>WebGL not supported</p>';
+    return;
+  }
+
+  initGL();
+  spaceball = new TrackballRotator(canvas, () => {}, 0);
+  setupUI();
+  requestAnimationFrame(drawFrame);
+}
+
+window.init = init;
+window.addEventListener('load', init);
