@@ -1,4 +1,4 @@
-// model.js (PA#3 mesh + UV for MIP textures)
+// model.js (GWC mesh + UV for MIP textures)
 // Surface of revolution with damping circular waves
 // x = r cos u, y = r sin u, z = a e^{-n r} sin((m*pi/b) r + phi)
 
