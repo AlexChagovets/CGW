@@ -14,7 +14,7 @@ let params = {
   Nu: 120,
   Nr: 120,
   scale: 0.35,
-  uvScale: 16.0        // ✅ NEW: repeats texture many times -> MIP is obvious
+  uvScale: 16.0
 };
 
 // shader locations
@@ -28,7 +28,7 @@ let startTime = 0;
 
 // ---------- helpers ----------
 function mat3FromMat4(m) {
-  // OK only if NO non-uniform scaling. We use uniform scale, so OK.
+  // OK for rotation + translation + UNIFORM scale
   return new Float32Array([
     m[0], m[1], m[2],
     m[4], m[5], m[6],
@@ -58,6 +58,7 @@ function makeMipCanvas(size, level) {
   c.height = size;
   const ctx = c.getContext('2d');
 
+  // strong different color per mip level
   ctx.fillStyle = `hsl(${(level * 60) % 360}, 85%, 55%)`;
   ctx.fillRect(0, 0, size, size);
 
@@ -83,7 +84,6 @@ function makeMipCanvas(size, level) {
 function createMipTexture(gl) {
   const tex = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, tex);
-
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
 
   const baseSize = 256; // power of 2
@@ -98,9 +98,10 @@ function createMipTexture(gl) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 
-  // ✅ sharp jumps between MIP levels (best for demo)
+  // sharp jumps between MIP levels (best for demo)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST_MIPMAP_NEAREST);
 
+  // magnification (no mip)
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
   gl.bindTexture(gl.TEXTURE_2D, null);
@@ -120,25 +121,28 @@ function drawFrame(timeMs) {
 
   const aspect = gl.canvas.width / gl.canvas.height;
 
-  // narrower FOV helps make minification more visible
-  const projection = m4.perspective(Math.PI / 10, aspect, 0.1, 200);
+  // narrower FOV helps show minification (more MIP switching)
+  const projection = m4.perspective(Math.PI / 10, aspect, 0.1, 300);
 
   const view = spaceball.getViewMatrix();
 
   const rotateToPointZero = m4.axisRotation([0.707, 0.707, 0], 0.7);
+
+  // push camera a bit further => easier to reach higher mips
   const translateToPointZero = m4.translation(0, 0, -18);
 
+  // uniform scale
   const s = Math.max(0.01, params.scale);
   const scaleM = m4.scaling(s, s, s);
 
+  // ModelView = T * S * R * View
   const modelView = m4.multiply(
     translateToPointZero,
     m4.multiply(scaleM, m4.multiply(rotateToPointZero, view))
   );
-
   const mvp = m4.multiply(projection, modelView);
 
-  // rotating point light
+  // rotating point light (world) -> view
   const lightR = 12.0;
   const lightH = 6.0;
   const lightWorld = [lightR * Math.cos(t), lightH, lightR * Math.sin(t), 1.0];
@@ -148,12 +152,17 @@ function drawFrame(timeMs) {
 
   gl.uniformMatrix4fv(loc.uMVP, false, mvp);
   gl.uniformMatrix4fv(loc.uMV, false, modelView);
+
+  // IMPORTANT: because we do uniform scale, N = mat3(MV) is ok,
+  // but still normalize in shader (you already do).
   gl.uniformMatrix3fv(loc.uN, false, mat3FromMat4(modelView));
+
   gl.uniform3f(loc.uLight, lightView4[0], lightView4[1], lightView4[2]);
 
-  // ✅ NEW: pass uv tiling
+  // pass UV tiling to shader
   gl.uniform1f(loc.uUVScale, params.uvScale);
 
+  // bind texture
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, mipTex);
   gl.uniform1i(loc.uTex, 0);
@@ -181,9 +190,19 @@ function initGL() {
     uN: gl.getUniformLocation(program, 'NormalMatrix'),
     uLight: gl.getUniformLocation(program, 'LightPosView'),
     uTex: gl.getUniformLocation(program, 'uTex'),
-
-    uUVScale: gl.getUniformLocation(program, 'uUVScale'), // ✅ NEW
+    uUVScale: gl.getUniformLocation(program, 'uUVScale'),
   };
+
+  // quick diagnostics (helps a lot)
+  if (loc.aVertex < 0) console.error('Attribute vertex not found');
+  if (loc.aNormal < 0) console.error('Attribute normal not found');
+  if (loc.aTexcoord < 0) console.error('Attribute texcoord not found');
+  if (!loc.uMVP) console.error('Uniform ModelViewProjectionMatrix not found');
+  if (!loc.uMV) console.error('Uniform ModelViewMatrix not found');
+  if (!loc.uN) console.error('Uniform NormalMatrix not found');
+  if (!loc.uLight) console.error('Uniform LightPosView not found');
+  if (!loc.uTex) console.error('Uniform uTex not found');
+  if (!loc.uUVScale) console.error('Uniform uUVScale not found');
 
   surface = new Model();
   rebuildSurface();
@@ -248,7 +267,7 @@ function setupUI() {
   bindSlider('Nr', 'Nr');
 
   bindSlider('scale', 'scale', v => v.toFixed(2));
-  bindSlider('uvScale', 'uvScale', v => v.toFixed(1)); // ✅ NEW
+  bindSlider('uvScale', 'uvScale', v => v.toFixed(0));
 
   const shotBtn = document.getElementById('shot');
   if (shotBtn) {
@@ -275,17 +294,17 @@ function init() {
   try {
     initGL();
   } catch (e) {
-    document.getElementById('canvas-holder').innerHTML =
-      '<p>Could not init WebGL: ' + e + '</p>';
+    document.getElementById('canvas-holder').innerHTML = '<p>Could not init WebGL: ' + e + '</p>';
     console.error(e);
     return;
   }
 
+  // trackball used only for view matrix (we run our own render loop)
   spaceball = new TrackballRotator(canvas, () => {}, 0);
 
   setupUI();
   requestAnimationFrame(drawFrame);
 }
 
-window.init = init;
+// ✅ IMPORTANT: only ONE init method
 window.addEventListener('load', init);
